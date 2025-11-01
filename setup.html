@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LWS - Deployment Setup Tool</title>
+    <title>WSA - Deployment Setup Tool</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
     <style>
@@ -34,6 +34,21 @@
         .copy-btn.copied { background-color: #10b981; }
         /* Style for bolding key terms */
         strong { color: #60a5fa; /* A lighter blue for emphasis */ font-weight: 600; }
+        /* Styling for details dropdown */
+        details > summary {
+            cursor: pointer;
+            color: #9ca3af; /* gray-400 */
+            font-size: 0.75rem; /* text-xs */
+            margin-top: 0.25rem; /* mt-1 */
+        }
+        details > summary:hover {
+            color: #60a5fa; /* blue-400 */
+        }
+        details ol {
+            margin-top: 0.5rem; /* mt-2 */
+            padding-left: 1.5rem; /* pl-6 */
+            list-style-type: decimal;
+        }
     </style>
 </head>
 <body class="bg-gray-900 text-white min-h-screen p-4 md:p-8">
@@ -41,7 +56,7 @@
         
         <!-- Header / Step Navigation -->
         <div class="bg-gray-900 p-4 border-b border-gray-700">
-            <h1 class="text-2xl font-bold text-blue-400 text-center">Lone Worker Safety System - Setup Tool</h1>
+            <h1 class="text-2xl font-bold text-blue-400 text-center">Workplace Support App - Setup Tool</h1>
         </div>
         <div class="step-nav flex flex-wrap justify-center bg-gray-700 p-2 shadow-inner">
             <button type="button" id="nav1" onclick="showStep(1)" class="current px-3 py-2 text-sm font-medium rounded-md m-1" disabled>Step 1: Welcome</button>
@@ -55,11 +70,12 @@
         <div class="p-6 md:p-8">
             <!-- Step 1: Welcome -->
             <div id="step1" class="step active">
-                <h2 class="text-xl font-semibold mb-4 text-blue-300">Welcome to the LWS Setup Wizard</h2>
-                <p class="text-gray-300 mb-4">This tool will guide you through creating and customizing your Lone Worker Safety system. It will generate a <strong>`.zip`</strong> file containing the final, ready-to-host applications for your workers and monitors.</p>
+                <h2 class="text-xl font-semibold mb-4 text-blue-300">Welcome to the WSA Setup Wizard</h2>
+                <p class="text-gray-300 mb-4">This tool will guide you through creating and customizing your Workplace Support App (WSA), which combines Lone Worker Safety with Visit Reporting.</p>
                 <p class="text-gray-300 mb-6">We recommend downloading the full documentation PDF before you begin. You can also find this link in the final step.</p>
                 
-                <a href="https://russell-netizen.github.io/LWSS/templates/LWS_Documentation.pdf" download="LWS_Documentation.pdf" class="block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg text-lg mb-6">
+                <!-- === UPDATED LINK AND FILENAME === -->
+                <a href="./Documentation.pdf" download="Documentation.pdf" class="block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg text-lg mb-6">
                     Download Full Documentation (PDF)
                 </a>
                 
@@ -71,15 +87,23 @@
             <div id="step2" class="step">
                 <h2 class="text-xl font-semibold mb-4 text-blue-300">Step 2: Set Up Your Google Sheet</h2>
                  <ol class="list-decimal list-inside text-gray-300 space-y-3 mb-6">
-                    <li>Go to <a href="https://sheets.new" target="_blank" class="text-blue-400 hover:underline"><strong>sheets.new</strong></a> to create a new, blank Google Sheet. Give it a name (e.g., "LWS Data").</li>
-                    <li>Click the button below to copy the required spreadsheet <strong>headers</strong> (they will be copied with tabs between them).</li>
-                    <li>In your new sheet, click <strong>once</strong> on cell <strong>A1</strong>.</li>
-                    <li><strong>Paste</strong> the copied text. The headers should automatically fill row 1 from cell A1 to S1.</li> 
+                    <li>Go to <a href="https://sheets.new" target="_blank" class="text-blue-400 hover:underline"><strong>sheets.new</strong></a> to create a new, blank Google Sheet. Give it a name (e.g., "WSA Data").</li>
+                    <li>The first sheet tab (default named "Sheet1") will be your <strong>`Visits`</strong> log. **Rename this tab to `Visits`**.</li>
+                    <li>In this <strong>`Visits`</strong> sheet, click <strong>once</strong> on cell <strong>A1</strong>.</li>
+                    <li>Click the "Copy Headers" button below and <strong>Paste</strong> the text. The **21 headers** should automatically fill row 1 from cell A1 to U1.</li>
+                    <li class="mt-4"><strong>Create the Checklists Tab:</strong>
+                        <ul class="list-disc list-inside ml-6 mt-2 p-2 bg-gray-700 rounded-md space-y-1">
+                            <li>Click the <strong>`+`</strong> icon at the bottom of the sheet to add a new tab.</li>
+                            <li>Double-click the new tab's name (e.g., "Sheet2") and rename it to **`Checklists`**. (Spelling must be exact).</li>
+                            <li>In this new <strong>`Checklists`</strong> sheet, click cell **A1** and type <strong>`Company Name`</strong>.</li>
+                            <li>In cell **B1**, type <strong>`Question 1`</strong>. In **C1**, type <strong>`Question 2`</strong>, and so on for any custom questions you need to define.</li>
+                        </ul>
+                    </li>
                 </ol>
                 <div class="relative bg-gray-900 rounded-lg p-4 font-mono text-sm text-gray-400 pr-16 mb-4">
-                    <button type="button" id="copyHeadersBtn" onclick="copyHeadersTabDelimited(this)" class="copy-btn">Copy</button>
-                    <!-- Display text shows commas, but copied text uses tabs -->
-                    <p id="headersDisplayText" class="overflow-x-auto">Date,Worker Name,Worker Phone Number,Emergency Contact Name,Emergency Contact Number,Emergency Contact Email,Escalation Contact Name,Escalation Contact Number,Escalation Contact Email,Location Name,Location Address,Arrival Time,Anticipated Departure Time,Actual Departure Time,Alarm Status,Notes,Last Known GPS,GPS Timestamp,Battery Level</p> 
+                    <button type="button" id="copyHeadersBtn" onclick="copyHeadersTabDelimited(this)" class="copy-btn">Copy Headers</button>
+                    <!-- Updated Display Text (21 headers) -->
+                    <p id="headersDisplayText" class="overflow-x-auto">Date,Worker Name,Worker Phone Number,Emergency Contact Name,Emergency Contact Number,Emergency Contact Email,Escalation Contact Name,Escalation Contact Number,Escalation Contact Email,Location Name,Location Address,Company Name,Arrival Time,Anticipated Departure Time,Actual Departure Time,Alarm Status,Visit Report Data,Notes,Last Known GPS,GPS Timestamp,Battery Level</p> 
                 </div>
                 <button type="button" onclick="nextStep()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg">Next Step</button>
             </div>
@@ -90,14 +114,31 @@
                 <ol class="list-decimal list-inside text-gray-300 space-y-3 mb-6">
                     <li>In your Google Sheet, click <strong>`Extensions`</strong> > <strong>`Apps Script`</strong>.</li>
                     <li>Delete any code in the <strong>`Code.gs`</strong> file.</li>
-                    <li><strong>Create a Secret Key:</strong> Enter a strong, private password in the box below. This will be automatically injected into the script code for you.</li>
+                    <li><strong>Create a Secret Key:</strong> Enter a strong, private password in the box below.</li>
                     
                     <div class="mb-4 ml-6"> 
                         <label for="secretKeyStep3" class="block text-sm font-medium text-gray-300">Create a Secret Key</label>
                         <input type="password" id="secretKeyStep3" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500" placeholder="Enter a strong, private password">
                     </div>
 
-                    <li>Click the <strong>"Copy Script"</strong> button below. The complete, customized code (with your key included) will be copied to your clipboard.</li>
+                    <!-- === MOVED: Gemini API Key Input === -->
+                    <div class="mb-4 ml-6"> 
+                        <label for="geminiApiKeyStep3" class="block text-sm font-medium text-gray-300">Gemini API Key (Optional)</label>
+                        <input type="password" id="geminiApiKeyStep3" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500" placeholder="Paste your API key here (e.g., AIza...)">
+                        <p class="text-xs text-gray-400 mt-1">Required for AI grammar/spelling correction on reports. Leave blank to disable.</p> 
+                        <details>
+                            <summary>How to get an API key</summary>
+                            <ol class="text-xs text-gray-400 space-y-1">
+                                <li>Go to <strong><a href="https://aistudio.google.com/" target="_blank" class="text-blue-400 hover:underline">Google AI Studio</a></strong> and sign in.</li>
+                                <li>On the left, click <strong>"API keys"</strong>, then <strong>"Create API key"</strong>.</li>
+                                <li>Copy the new key and paste it above.</li>
+                                <li>**Important:** You must also enable the "Generative Language API" and link a Billing account to the associated Google Cloud project (even for the free tier). See the main documentation PDF for full details.</li>
+                            </ol>
+                        </details>
+                    </div>
+                    <!-- === END MOVED === -->
+
+                    <li>Click the <strong>"Copy Script"</strong> button below to copy the new backend code (with *both* keys injected).</li>
                     <li><strong>Paste</strong> the copied code into the empty <strong>`Code.gs`</strong> editor.</li>
                     <li>Click the <strong>`Deploy`</strong> button (top right), select <strong>`New deployment`</strong>.
                         <ul class="list-disc list-inside ml-6 mt-2 p-2 bg-gray-700 rounded-md">
@@ -107,9 +148,9 @@
                             <li>Click <strong>`Deploy`</strong>.</li>
                         </ul>
                     </li>
-                    <li><strong>Authorize</strong> the script (click "Authorize access", choose your account, click "Advanced", then "Go to... (unsafe)", and "Allow").</li>
+                    <li><strong>Authorize</strong> the script (click "Authorize access", choose your account, click "Advanced", "Go to... (unsafe)", and "Allow").</li>
                     <li>After deploying, **copy the "Web app URL"**. You will need it in the next step.</li>
-                    <li>Finally, set up the <strong>trigger</strong>:
+                    <li>Set up the <strong>trigger</strong>:
                         <ul class="list-disc list-inside ml-6 mt-2 p-2 bg-gray-700 rounded-md">
                             <li>Click the "Triggers" icon (alarm clock) on the left.</li>
                             <li>Click <strong>`Add Trigger`</strong>.</li>
@@ -128,7 +169,7 @@
             <!-- Step 4: Configure Apps -->
             <div id="step4" class="step">
                 <h2 class="text-xl font-semibold mb-4 text-blue-300">Step 4: Configure Your Applications</h2>
-                <p class="text-gray-300 mb-6">Enter the values you just created. This will inject them into the final app files, removing the need for manual setup by your users.</p>
+                <p class="text-gray-300 mb-6">Enter the values you just created. This will inject them into the final app files.</p>
                 <div class="space-y-4">
                     <div>
                         <label for="scriptUrl" class="block text-sm font-medium text-gray-300">Web App URL</label>
@@ -148,7 +189,7 @@
                         <input id="enableCheckin" type="checkbox" class="h-4 w-4 text-blue-600 bg-gray-700 border-gray-600 rounded focus:ring-blue-500">
                         <label for="enableCheckin" class="ml-2 block text-sm font-medium text-gray-300">Enable "Are You OK?" Check-ins (Optional)</label>
                     </div>
-                     <div id="checkinIntervalDiv" class="hidden ml-6"> <!-- Indented and initially hidden -->
+                     <div id="checkinIntervalDiv" class="hidden ml-6"> 
                         <label for="checkinInterval" class="block text-sm font-medium text-gray-300">Check-in Interval (Minutes)</label>
                         <input type="number" id="checkinInterval" value="30" min="5" class="mt-1 block w-48 bg-gray-700 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500">
                         <p class="text-xs text-gray-400 mt-1">If check-ins are enabled, how often should the worker be prompted? (e.g., 30)</p>
@@ -158,6 +199,7 @@
                         <input type="url" id="logoUrl" class="mt-1 block w-full bg-gray-700 border border-gray-600 rounded-md shadow-sm py-2 px-3 text-white focus:outline-none focus:ring-blue-500 focus:border-blue-500" placeholder="https://your-logo.com/image.png">
                         <p class="text-xs text-gray-400 mt-1">If provided, this will replace the default icon for the Worker PWA and appear in the Monitor App header.</p> 
                     </div>
+                    <!-- === MOVED: Gemini Key field removed from Step 4 === -->
                 </div>
                 <button type="button" onclick="testAndProceed()" class="mt-8 w-full bg-green-600 hover:bg-green-700 text-white font-bold py-3 px-4 rounded-lg">Test Connection & Proceed</button>
                 <p id="testStatus" class="text-center text-yellow-400 mt-4 h-4"></p>
@@ -166,7 +208,7 @@
             <!-- Step 5: Download Apps -->
             <div id="step5" class="step">
                 <h2 class="text-xl font-semibold mb-4 text-blue-300">Step 5: Download Your Customized Apps</h2>
-                <p class="text-gray-300 mb-6">Your configuration is correct. Click the button below to generate and download a <strong>`.zip`</strong> file containing your customized <strong>`LoneWorkerApp`</strong> and <strong>`MonitoringDashboardApp`</strong> folders, plus a backup of the script text.</p>
+                <p class="text-gray-300 mb-6">Your configuration is correct. Click the button below to generate and download a <strong>`.zip`</strong> file containing your customized <strong>`WorkerApp`</strong> and <strong>`MonitorApp`</strong> folders, plus a backup of the script text.</p>
                 <button type="button" id="downloadBtn" onclick="generateZip()" class="w-full bg-blue-600 hover:bg-blue-700 text-white font-bold py-3 px-4 rounded-lg text-lg">Generate & Download App Package (.zip)</button>
                 <div id="zipStatus" class="text-center text-gray-400 mt-4"></div>
                  <button type="button" onclick="nextStep()" class="mt-6 w-full bg-gray-600 hover:bg-gray-700 text-white font-bold py-3 px-4 rounded-lg">Next Step: Finish</button>
@@ -177,7 +219,9 @@
                 <h2 class="text-xl font-semibold mb-4 text-green-400">Setup Complete & Documentation</h2>
                  <p class="text-gray-300 mb-4">You have successfully generated the application package!</p>
                 <p class="text-gray-300 mb-6">For detailed instructions on how to host the downloaded app folders using GitHub Pages and distribute the links to your team, please download the full documentation PDF:</p>
-                <a href="https://russell-netizen.github.io/LWSS/templates/LWS_Documentation.pdf" download="LWS_Documentation.pdf" class="block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg text-lg">
+                
+                <!-- === UPDATED LINK AND FILENAME === -->
+                <a href="./Documentation.pdf" download="Documentation.pdf" class="block w-full text-center bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-3 px-4 rounded-lg text-lg">
                     Download Full Documentation (PDF)
                 </a>
                 <p class="text-xs text-gray-400 mt-4">
@@ -193,9 +237,10 @@
     let templatesLoaded = false; 
     const config = {
         secretKey: ""
+        // geminiKey will be read directly from Step 3 input
     };
-    // Updated headers text with tabs AND Battery Level
-    const headersTabDelimited = "Date\tWorker Name\tWorker Phone Number\tEmergency Contact Name\tEmergency Contact Number\tEmergency Contact Email\tEscalation Contact Name\tEscalation Contact Number\tEscalation Contact Email\tLocation Name\tLocation Address\tArrival Time\tAnticipated Departure Time\tActual Departure Time\tAlarm Status\tNotes\tLast Known GPS\tGPS Timestamp\tBattery Level";
+    // === UPDATED Header String (21 columns) ===
+    const headersTabDelimited = "Date\tWorker Name\tWorker Phone Number\tEmergency Contact Name\tEmergency Contact Number\tEmergency Contact Email\tEscalation Contact Name\tEscalation Contact Number\tEscalation Contact Email\tLocation Name\tLocation Address\tCompany Name\tArrival Time\tAnticipated Departure Time\tActual Departure Time\tAlarm Status\tVisit Report Data\tNotes\tLast Known GPS\tGPS Timestamp\tBattery Level";
 
     // --- Template Fetching ---
     window.onload = async () => {
@@ -212,13 +257,13 @@
         };
 
         try {
+            // --- FIXED: Only fetch code templates ---
             const templateFiles = [
                 'apps_script_template.txt',
                 'worker_app_template.txt',
                 'monitor_app_template.txt',
                 'manifest.json',
                 'sw.js'
-                // Documentation files are no longer fetched
             ];
             for (const file of templateFiles) {
                 await fetchTemplate(file);
@@ -291,6 +336,7 @@
                 return; 
             }
             config.secretKey = keyInput.value;
+            // Note: We don't save the Gemini key to config, it's read directly
         }
         
         const maxSteps = 6;
@@ -317,7 +363,7 @@
             button.innerText = 'Copied!';
             button.classList.add('copied');
             setTimeout(() => {
-                button.innerText = 'Copy';
+                button.innerText = 'Copy Headers'; 
                 button.classList.remove('copied');
             }, 2000);
         }).catch(err => {
@@ -347,12 +393,15 @@
         });
     }
 
+    // --- UPDATED: copyInjectedScript (now injects both keys) ---
     function copyInjectedScript(button) {
          if (!templatesLoaded) { 
              alert('Templates are still loading or failed to load. Cannot copy script yet.');
              return;
          }
         const keyInput = document.getElementById('secretKeyStep3');
+        const geminiKeyInput = document.getElementById('geminiApiKeyStep3'); // Get new key
+        
         const key = keyInput ? keyInput.value : '';
         if (!key) {
             alert("Please enter a Secret Key in the box above first.");
@@ -366,7 +415,13 @@
             return;
         }
         
-        const injectedScript = template.replace('YOUR_SECRET_KEY_HERE', key);
+        // --- UPDATED: Inject Gemini API Key as well ---
+        const geminiApiKey = geminiKeyInput ? geminiKeyInput.value : '';
+        const geminiKeyToInject = geminiApiKey || "YOUR_GEMINI_API_KEY_HERE";
+        
+        let injectedScript = template.replace('YOUR_SECRET_KEY_HERE', key);
+        injectedScript = injectedScript.replace('YOUR_GEMINI_API_KEY_HERE', geminiKeyToInject);
+        // --- END UPDATE ---
 
         if (!navigator.clipboard) {
             alert('Clipboard API not available.');
@@ -470,6 +525,7 @@
         document.body.appendChild(script);
     }
 
+    // --- UPDATED: generateZip (now reads Gemini key from Step 3) ---
     async function generateZip() {
          if (!templatesLoaded) {
              alert('Templates are still loading or failed to load. Cannot generate zip file.');
@@ -501,9 +557,10 @@
             const enableCheckinInput = document.getElementById('enableCheckin');
             const checkinIntervalInput = document.getElementById('checkinInterval');
             const logoUrlInput = document.getElementById('logoUrl');
+            const geminiApiKeyInput = document.getElementById('geminiApiKeyStep3'); // --- READ FROM STEP 3 ---
 
-            if (!urlInput || !keyInput || !firstAlertInput || !enableCheckinInput || !checkinIntervalInput || !logoUrlInput) {
-                 throw new Error("One or more configuration input elements are missing in Step 4.");
+            if (!urlInput || !keyInput || !firstAlertInput || !enableCheckinInput || !checkinIntervalInput || !logoUrlInput || !geminiApiKeyInput) {
+                 throw new Error("One or more configuration input elements are missing.");
             }
 
             const url = urlInput.value;
@@ -512,6 +569,8 @@
             const checkin = enableCheckinInput.checked;
             const checkinInterval = checkinIntervalInput.value || '30'; 
             const logoUrl = logoUrlInput.value || 'https://i.postimg.cc/dVmVg3Pn/favicon-logo-for-LWSApp.png'; 
+            const geminiApiKey = geminiApiKeyInput.value; // --- READ FROM STEP 3 ---
+            const geminiKeyToInject = geminiApiKey || "YOUR_GEMINI_API_KEY_HERE"; 
             
             if (!url) throw new Error("Web App URL is required.");
             if (!key) throw new Error("Secret Key is required (should be auto-filled).");
@@ -536,17 +595,17 @@
             workerApp = workerApp.replace(/%%FIRST_ALERT_MINUTES%%/g, firstAlert);
             workerApp = workerApp.replace(/%%CHECKIN_ENABLED%%/g, checkin);
             workerApp = workerApp.replace(/%%CHECKIN_INTERVAL%%/g, checkinInterval);
-            workerApp = workerApp.replace(/https:\/\/i\.postimg\.cc\/dVmVg3Pn\/favicon-logo-for-LWSApp\.png/g, logoUrl);
+            workerApp = workerApp.replace(/https:\/\/i\.postimg\.cc\/dVmVg3Pn\/favicon-logo-for-LWSApp\.png/g, logoUrl.replace(/\//g, '\\/'));
             workerApp = workerApp.replace(/%%GOOGLE_SHEET_URL%%/g, url);
             
-            const workerFolder = zip.folder('LoneWorkerApp');
+            const workerFolder = zip.folder('WorkerApp'); 
             if (!workerFolder) throw new Error("Could not create worker folder in zip");
             workerFolder.file('index.html', workerApp);
             workerFolder.file('sw.js', templates['sw.js']);
 
             // --- 2. Process Manifest ---
             let manifest = templates['manifest.json'];
-            manifest = manifest.replace(/https:\/\/i\.postimg\.cc\/dVmVg3Pn\/favicon-logo-for-LWSApp\.png/g, logoUrl);
+            manifest = manifest.replace(/https:\/\/i\.postimg\.cc\/dVmVg3Pn\/favicon-logo-for-LWSApp\.png/g, logoUrl.replace(/\//g, '\\/'));
             workerFolder.file('manifest.json', manifest);
 
             // --- 3. Process Monitor App ---
@@ -555,27 +614,15 @@
             
             monitorApp = monitorApp.replace(/%%LOGO_URL%%/g, logoUrl); 
             
-            // --- FIXED: Reverting to Option 1 (No Auto-Login) ---
-            // DO NOT inject credentials. The original template file already
-            // contains the correct logic to use localStorage and show the setupPage.
-            // We just need to make sure the setupPage HTML is NOT removed.
-            
-            // monitorApp = monitorApp.replace(/<!-- SETUP_PAGE_START -->.*?<!-- SETUP_PAGE_END -->/s, ''); // DO NOT REMOVE
-            // monitorApp = monitorApp.replace(/<!-- RESET_BUTTON_START -->.*?<!-- RESET_BUTTON_END -->/s, ''); // DO NOT REMOVE
-            // monitorApp = monitorApp.replace('<div id="dashboardPage" class="h-full flex-col hidden">', '<div id="dashboardPage" class="h-full flex flex-col">'); // DO NOT CHANGE
-            
-            // const loginLogic = `...`; // DO NOT ADD
-            // monitorApp = monitorApp.replace(/<!-- MONITOR_LOGIN_LOGIC_START -->.*?<!-- MONITOR_LOGIN_LOGIC_END -->/s, loginLogic); // DO NOT REPLACE
-            // --- END FIX ---
-            
-            const monitorFolder = zip.folder('MonitoringDashboardApp');
+            const monitorFolder = zip.folder('MonitorApp'); 
              if (!monitorFolder) throw new Error("Could not create monitor folder in zip");
-            monitorFolder.file('index.html', monitorApp);
+            monitorFolder.file('index.html', monitorApp); 
 
             // --- 4. Process Apps Script ---
             statusEl.innerText = 'Processing Apps Script file...';
             let appsScript = templates['apps_script_template.txt'];
             appsScript = appsScript.replace('YOUR_SECRET_KEY_HERE', key);
+            appsScript = appsScript.replace('YOUR_GEMINI_API_KEY_HERE', geminiKeyToInject); // --- INJECT ---
             zip.file('01-PASTE_THIS_INTO_APPS_SCRIPT.txt', appsScript);
 
             // --- 5. Documentation Removed from Zip ---
@@ -587,7 +634,7 @@
             
             const a = document.createElement('a');
             a.href = URL.createObjectURL(content);
-            a.download = 'LWS_App_Package.zip'; 
+            a.download = 'OTG_AppSuite_Package.zip'; 
             document.body.appendChild(a);
             a.click();
             document.body.removeChild(a);
@@ -608,4 +655,5 @@
 </script>
 </body>
 </html>
+
 
