@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>LWS Monitor</title>
+    <title>OTG Monitor</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/tone/14.7.77/Tone.js"></script>
@@ -50,7 +50,7 @@
             <div class="flex items-center justify-between h-16">
                 <div class="flex items-center">
                     <img src="%%LOGO_URL%%" alt="Logo" class="h-8 w-8 mr-3 rounded" onerror="this.style.display='none'"> 
-                    <h1 class="text-2xl font-bold text-blue-400">Lone Worker Monitor</h1>
+                    <h1 class="text-2xl font-bold text-blue-400">On-the-Go Monitor</h1>
                 </div>
                 <div class="flex items-center space-x-2">
                     <!-- --- Notification Button --- -->
@@ -372,16 +372,20 @@
             
             const anticipatedTimeStr = anticipatedTimeDT.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
             
-            let batteryLevel = null;
-            let batteryColor = 'text-gray-400'; 
-            const notes = worker.Notes || '';
-            const batteryMatch = notes.match(/Battery: (\d+)%/); 
-            if (batteryMatch && batteryMatch[1]) {
-                 batteryLevel = parseInt(batteryMatch[1], 10);
+            // --- === BATTERY FIX (v2.14) === ---
+            let batteryLevel = worker['Battery Level']; // Read from the new column
+            let batteryColor = 'text-gray-400';
+            
+            if (batteryLevel !== null && batteryLevel !== "") {
+                 batteryLevel = parseInt(batteryLevel, 10);
                  if (batteryLevel < 15) batteryColor = 'text-red-400 animate-pulse';
                  else if (batteryLevel < 30) batteryColor = 'text-yellow-400';
                  else batteryColor = 'text-green-400';
+            } else {
+                batteryLevel = null; // Ensure it's null if empty
             }
+            // --- === END BATTERY FIX === ---
+
              const batteryHtml = batteryLevel !== null 
                 ? `<span class="text-xs ${batteryColor} ml-2 whitespace-nowrap">(<svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="currentColor" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="inline-block relative -top-px"><path d="M18.5 7H22v10H18.5l-2.5-5zM4 17V7h11a2 2 0 0 1 2 2v6a2 2 0 0 1-2 2H4z"></path></svg>${batteryLevel}%)</span>` 
                 : '<span class="text-xs text-gray-500 ml-2 whitespace-nowrap">(Batt: N/A)</span>'; 
@@ -501,7 +505,7 @@
              checkNotificationPermission(); // Update UI
              if (permission === 'granted') {
                  addLogEntry("Desktop notifications enabled.");
-                 new Notification("LWS Monitor", { body: "Desktop notifications are now enabled!" });
+                 new Notification("OTG Monitor", { body: "Desktop notifications are now enabled!" });
              } else {
                  addLogEntry("Desktop notification permission denied.");
              }
@@ -511,11 +515,11 @@
     function showNotification(workerName, status, location) {
         if (notificationPermission !== 'granted') return;
         
-        const title = `LWS ALERT: ${workerName}`;
+        const title = `OTG ALERT: ${workerName}`;
         const options = {
             body: `Status changed to: ${status.replace(/_/g, ' ')}\nLocation: ${location || 'N/A'}`, 
             icon: '%%LOGO_URL%%', 
-            tag: `lws-alert-${workerName}` 
+            tag: `otg-alert-${workerName}` 
         };
 
         const notification = new Notification(title, options);
