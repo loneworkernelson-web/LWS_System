@@ -1,76 +1,130 @@
 // ##### --------------------------------------------------- #####
-// ##### Lone Worker Safety System - Google Apps Script Backend #####
+// ##### Workplace Support App (WSA) - Google Apps Script Backend #####
 // ##### --------------------------------------------------- #####
 
 // --- CONFIGURATION ---
-// IMPORTANT: Change this to a secret password of your choice.
-var SECRET_KEY = "YOUR_SECRET_KEY_HERE";
-
-// --- SPREADSHEET SETUP ---
-var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
+var SECRET_KEY = "YOUR_SECRET_KEY_HERE"; // For Monitor App
+var GEMINI_API_KEY = "YOUR_GEMINI_API_KEY_HERE"; // For AI Report Correction
+var SPREADSHEET_ID = SpreadsheetApp.getActiveSpreadsheet().getId();
+var VISITS_SHEET_NAME = "Visits";
+var CHECKLISTS_SHEET_NAME = "Checklists";
+var REPORT_TAB_PREFIX = "Report - "; 
 
 // --- WEB APP ENDPOINTS ---
+
 /**
- * Handles GET requests. Used by the Monitoring Dashboard to fetch data.
- * Responds with JSONP for cross-domain access.
+ * Handles GET requests.
+ * 1. Monitor App (JSONP): If 'callback' param exists, validates 'token' and returns all data from [VISITS_SHEET_NAME].
+ * 2. Worker App (JSON): If 'action=getForms' param exists, returns custom checklist from [CHECKLISTS_SHEET_NAME] (no key needed).
  */
 function doGet(e) {
-  var token = e.parameter.token;
-  if (token !== SECRET_KEY) {
+  // 1. Monitor App Request (JSONP)
+  if (e.parameter.callback) {
+    var token = e.parameter.token;
+    if (token !== SECRET_KEY) {
+      return ContentService
+        .createTextOutput(JSON.stringify({ status: "error", message: "Access Denied" }))
+        .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    }
+    
+    var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(VISITS_SHEET_NAME);
+    var data = sheet.getDataRange().getValues();
+    var headers = data.shift();
+    var json = data.map(function(row) {
+      var obj = {};
+      headers.forEach(function(header, i) {
+        if (row[i] instanceof Date) {
+          obj[header] = row[i].toISOString(); 
+        } else {
+          obj[header] = row[i];
+        }
+      });
+      return obj;
+    });
+
+    var callback = e.parameter.callback;
+    var jsonpResponse = callback + '(' + JSON.stringify(json) + ')';
     return ContentService
-      .createTextOutput(JSON.stringify({ status: "error", message: "Access Denied" }))
+      .createTextOutput(jsonpResponse)
       .setMimeType(ContentService.MimeType.JAVASCRIPT);
   }
 
-  var data = sheet.getDataRange().getValues();
-  var headers = data.shift();
-  var json = data.map(function(row) {
-    var obj = {};
-    headers.forEach(function(header, i) {
-       // Format Date objects nicely if they are actual Date objects
-      if (row[i] instanceof Date) {
-           // Use ISO string for consistency, timezone might vary based on sheet settings
-          obj[header] = row[i].toISOString(); 
-      } else {
-          obj[header] = row[i];
+  // 2. Worker App Request (JSON)
+  if (e.parameter.action === 'getForms' && e.parameter.companyName) {
+    var companyName = e.parameter.companyName;
+    var questions = []; // This will now be an array of objects
+    try {
+      var checklistSheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(CHECKLISTS_SHEET_NAME);
+      var data = checklistSheet.getDataRange().getValues();
+      var headers = data.shift(); // Get headers (Company Name, Question 1, ...)
+      
+      for (var i = 0; i < data.length; i++) {
+        if (data[i][0] === companyName) { // Find matching company in Col A
+          // Loop through question columns (from Col B onwards)
+          for (var j = 1; j < headers.length; j++) {
+            var questionText = data[i][j];
+            if (questionText) { 
+              var textStr = String(questionText);
+              if (textStr.startsWith("# ")) {
+                questions.push({ "type": "header", "text": textStr.substring(2).trim() });
+              } else if (textStr.startsWith("#")) {
+                 questions.push({ "type": "header", "text": textStr.substring(1).trim() });
+              } else if (textStr.startsWith("% ")) {
+                 questions.push({ "type": "textarea", "text": textStr.substring(2).trim() });
+              } else if (textStr.startsWith("%")) {
+                 questions.push({ "type": "textarea", "text": textStr.substring(1).trim() });
+              } else {
+                questions.push({ "type": "checkbox", "text": textStr });
+              }
+            } else {
+              break; 
+            }
+          }
+          break; 
+        }
       }
-    });
-    return obj;
-  });
+      Logger.log("Found " + questions.length + " items (questions/headers) for " + companyName);
+    } catch (err) {
+      Logger.log("Error in getForms: " + err.toString());
+    }
+    
+    return ContentService
+      .createTextOutput(JSON.stringify(questions))
+      .setMimeType(ContentService.MimeType.JSON);
+  }
 
-  var callback = e.parameter.callback;
-  var jsonpResponse = callback + '(' + JSON.stringify(json) + ')';
-
+  // Default invalid request
   return ContentService
-    .createTextOutput(jsonpResponse)
-    .setMimeType(ContentService.MimeType.JAVASCRIPT);
+    .createTextOutput(JSON.stringify({ status: "error", message: "Invalid request" }))
+    .setMimeType(ContentService.MimeType.JSON);
 }
+
 
 /**
  * Handles POST requests. Used by the Worker App AND Monitor App to submit data.
  */
 function doPost(e) {
   var lock = LockService.getScriptLock();
-  lock.waitLock(30000); // Wait up to 30 seconds for lock
+  lock.waitLock(30000); 
 
   try {
+    var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(VISITS_SHEET_NAME);
     var data = e.parameter;
     var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
     var arrivalTime = data["Arrival Time"];
     var workerName = data["Worker Name"];
-    var batteryLevelColIdx = headers.indexOf("Battery Level") + 1; // Get column index for Battery Level
-
-    // --- ADDED: Force phone numbers to text by prepending a single quote ---
+    
+    var batteryLevelColIdx = headers.indexOf("Battery Level") + 1; 
     var phoneHeaders = ["Worker Phone Number", "Emergency Contact Number", "Escalation Contact Number"];
+
+    // Force phone numbers to text by prepending a single quote
     for (var key in data) {
       if (phoneHeaders.indexOf(key) > -1 && data[key]) {
-        // Prepend single quote if it's not already there (e.g. from a + sign)
         if (data[key].charAt(0) !== "'" && data[key].charAt(0) !== "+") {
           data[key] = "'" + data[key];
         }
       }
     }
-    // --- END ADDED ---
 
     // Find existing row or create a new one
     var dataRange = sheet.getDataRange().getValues();
@@ -81,7 +135,6 @@ function doPost(e) {
           if (dataRange[i][headers.indexOf("Arrival Time")] instanceof Date) {
                rowArrivalTimeISO = dataRange[i][headers.indexOf("Arrival Time")].toISOString();
           } else if (dataRange[i][headers.indexOf("Arrival Time")]) {
-               // Attempt to parse if it's a string
                rowArrivalTimeISO = new Date(dataRange[i][headers.indexOf("Arrival Time")]).toISOString();
           }
       } catch (dateErr) {
@@ -99,48 +152,46 @@ function doPost(e) {
       headers.forEach(function(header) {
         if (data[header] !== undefined) {
           var colIndex = headers.indexOf(header) + 1;
-          sheet.getRange(rowIndex, colIndex).setValue(data[header]);
+          if (colIndex > 0) {
+            sheet.getRange(rowIndex, colIndex).setValue(data[header]);
 
-           // --- ADDED: Parse and save numeric battery level ---
-           if (header === "Notes" && data[header] && batteryLevelColIdx > 0) {
-              var batteryMatch = data[header].match(/Battery: (\d+)%/);
-              if (batteryMatch && batteryMatch[1]) {
-                   var level = parseInt(batteryMatch[1], 10);
-                   if (!isNaN(level)) {
-                        sheet.getRange(rowIndex, batteryLevelColIdx).setValue(level);
-                   }
-              }
-           }
-           // --- END ADDED ---
+             // Parse and save numeric battery level
+             if (header === "Notes" && data[header] && batteryLevelColIdx > 0) {
+                var batteryMatch = data[header].match(/Battery: (\d+)%/);
+                if (batteryMatch && batteryMatch[1]) {
+                     var level = parseInt(batteryMatch[1], 10);
+                     if (!isNaN(level)) {
+                          sheet.getRange(rowIndex, batteryLevelColIdx).setValue(level);
+                     }
+                }
+             }
+          }
         }
       });
     } else {
-      // Append new row (This part is mainly for the worker app's first "ON SITE" post)
+      // Append new row
       var newRow = headers.map(function(header) {
         return data[header] || "";
       });
-      // --- ADDED: Parse and set initial battery level for new row ---
+      // Parse and set initial battery level for new row
       if (data["Notes"] && batteryLevelColIdx > 0) {
            var batteryMatch = data["Notes"].match(/Battery: (\d+)%/);
            if (batteryMatch && batteryMatch[1]) {
                 var level = parseInt(batteryMatch[1], 10);
                 if (!isNaN(level)) {
-                     newRow[batteryLevelColIdx - 1] = level; // Array index is colIndex - 1
+                     newRow[batteryLevelColIdx - 1] = level; 
                 }
            }
       }
-      // --- END ADDED ---
       sheet.appendRow(newRow);
     }
 
-    // Immediate alert triggers (from worker app)
+    // Immediate alert triggers
     if (['EMERGENCY - PANIC BUTTON', 'DURESS_CODE_ACTIVATED', 'MISSED_CHECKIN'].indexOf(data['Alarm Status']) > -1) {
-      // Need to fetch the full worker data for the email function if it was an update
       var workerDataForEmail = {};
        if (rowIndex !== -1) {
            var updatedRowValues = sheet.getRange(rowIndex, 1, 1, headers.length).getValues()[0];
             headers.forEach(function(header, j) { 
-                // Remove leading quote from phone numbers for email body
                  if (phoneHeaders.indexOf(header) > -1 && typeof updatedRowValues[j] === 'string' && updatedRowValues[j].charAt(0) === "'") {
                      workerDataForEmail[header] = updatedRowValues[j].substring(1);
                  } else {
@@ -148,7 +199,6 @@ function doPost(e) {
                  }
             });
        } else {
-           // If it was a new row, remove quotes from incoming data for email
            workerDataForEmail = { ...data }; // Clone data
             phoneHeaders.forEach(function(header) {
                  if (workerDataForEmail[header] && typeof workerDataForEmail[header] === 'string' && workerDataForEmail[header].charAt(0) === "'") {
@@ -169,29 +219,24 @@ function doPost(e) {
 }
 
 // --- AUTOMATED TRIGGER FUNCTION ---
-/**
- * This function should be run on a time-based trigger (e.g., every 5 minutes).
- * It checks for overdue workers and sends escalating email alerts.
- */
 function checkOverdueWorkers() {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
 
   try {
+    var sheet = SpreadsheetApp.openById(SPREADSHEET_ID).getSheetByName(VISITS_SHEET_NAME);
     var dataRange = sheet.getDataRange();
     var data = dataRange.getValues();
     var headers = data[0];
     var now = new Date();
-    var phoneHeaders = ["Worker Phone Number", "Emergency Contact Number", "Escalation Contact Number"]; // Define here too
+    var phoneHeaders = ["Worker Phone Number", "Emergency Contact Number", "Escalation Contact Number"]; 
 
-    // Define all "resolved" statuses
     var resolvedStatuses = ['DEPARTED', 'SAFE - MANUALLY CLEARED', 'MONITOR_CLEARED_ALERT'];
 
     for (var i = 1; i < data.length; i++) {
       var row = data[i];
       var worker = {};
       headers.forEach(function(header, j) {
-        // Remove leading quote from phone numbers for email function
         if (phoneHeaders.indexOf(header) > -1 && typeof row[j] === 'string' && row[j].charAt(0) === "'") {
             worker[header] = row[j].substring(1);
         } else {
@@ -201,29 +246,25 @@ function checkOverdueWorkers() {
 
       var status = worker['Alarm Status'];
       
-      // Skip if resolved or essential data missing
       if (resolvedStatuses.indexOf(status) !== -1 || !worker['Anticipated Departure Time']) continue; 
 
       var anticipatedDeparture = null;
       try {
             anticipatedDeparture = new Date(worker['Anticipated Departure Time']);
-            // Check if date is valid
             if (isNaN(anticipatedDeparture.getTime())) {
                  Logger.log("Skipping row " + (i+1) + ": Invalid Anticipated Departure Time format - " + worker['Anticipated Departure Time']);
-                 continue; // Skip this row if date is invalid
+                 continue; 
             }
       } catch (dateErr) {
             Logger.log("Skipping row " + (i+1) + ": Error parsing Anticipated Departure Time - " + worker['Anticipated Departure Time']);
-            continue; // Skip row on date parsing error
+            continue; 
       }
 
 
-      // Check if overdue
       if (now > anticipatedDeparture) {
         var overdueMinutes = (now.getTime() - anticipatedDeparture.getTime()) / 60000;
         var alertToSend = null;
 
-        // Determine which alert level needs to be sent
         if (overdueMinutes >= 60 && status !== 'ESCALATION_SENT') {
           alertToSend = 'ESCALATION_SENT';
         } else if (overdueMinutes >= 45 && status !== 'EMAIL_3_SENT' && status !== 'ESCALATION_SENT') {
@@ -231,13 +272,11 @@ function checkOverdueWorkers() {
         } else if (overdueMinutes >= 30 && status !== 'EMAIL_2_SENT' && status !== 'EMAIL_3_SENT' && status !== 'ESCALATION_SENT') {
           alertToSend = 'EMAIL_2_SENT';
         } else if (overdueMinutes >= 15 && ['ON SITE', 'ALERT SENT'].includes(status) ) { 
-           // Only trigger EMAIL_1 if current status is ON SITE or ALERT SENT
           alertToSend = 'EMAIL_1_SENT';
         }
 
         if (alertToSend) {
           sheet.getRange(i + 1, headers.indexOf('Alarm Status') + 1).setValue(alertToSend);
-          // Update worker object with new status before sending email
           worker['Alarm Status'] = alertToSend; 
           sendAlertEmail(worker, alertToSend);
         }
@@ -251,9 +290,6 @@ function checkOverdueWorkers() {
 }
 
 // --- EMAIL HELPER FUNCTION ---
-/**
- * Sends a formatted alert email.
- */
 function sendAlertEmail(workerData, alertType) {
   var recipient = alertType === 'ESCALATION_SENT' ? workerData['Escalation Contact Email'] : workerData['Emergency Contact Email'];
   var subject = '';
@@ -306,7 +342,7 @@ function sendAlertEmail(workerData, alertType) {
          body = '<p>' + workerName + ' became overdue and triggered an initial alert state.</p>';
          break;
     default: 
-      subject = 'LWS Alert (' + alertType + ') for ' + workerName;
+      subject = 'OTG AppSuite Alert (' + alertType + ') for ' + workerName;
       body = '<p>An automated alert (' + alertType.replace(/_/g,' ') + ') has been triggered for ' + workerName + '.</p>';
       break;
   }
@@ -319,7 +355,7 @@ function sendAlertEmail(workerData, alertType) {
                    '<li><strong>Address:</strong> ' + locationAddress + '</li>' +
                    '<li><strong>Anticipated Departure:</strong> ' + anticipatedDepartureStr + '</li>' +
                    '</ul><p style="font-size: 1.2em; font-weight: bold;"><a href="' + locationLink + '">View Location on Map</a></p>' +
-                   '<p style="font-size: 0.8em; color: #888;">This is an automated message from the Lone Worker Safety System.</p></body></html>';
+                   '<p style="font-size: 0.8em; color: #888;">This is an automated message from the On-the-Go AppSuite System.</p></body></html>';
 
   if (recipient) {
     try {
@@ -327,7 +363,7 @@ function sendAlertEmail(workerData, alertType) {
         to: recipient,
         subject: subject,
         htmlBody: fullBody,
-        name: "LWS System Alert"
+        name: "OTG AppSuite Alert"
       });
       Logger.log('Email sent to ' + recipient + ' for alert type ' + alertType + ' for worker ' + workerName);
     } catch (e) {
@@ -336,5 +372,527 @@ function sendAlertEmail(workerData, alertType) {
   } else {
     Logger.log('Cannot send email: No recipient found for alert type ' + alertType + ' for worker ' + workerName);
   }
+}
+
+// --- WSA REPORTING FUNCTION (SINGLE COMPANY) ---
+function generateMonthlyReport() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const reportSheet = ss.getSheetByName("Reports");
+  const visitsSheet = ss.getSheetByName(VISITS_SHEET_NAME);
+  
+  if (!reportSheet || !visitsSheet) {
+    SpreadsheetApp.getUi().alert("Error: 'Reports' or 'Visits' sheet not found.");
+    return;
+  }
+
+  // 1. Get the report criteria from the 'Reports' sheet
+  let monthStr = reportSheet.getRange("B2").getValue(); 
+  const companyName = reportSheet.getRange("B1").getValue();
+  
+  if (!companyName || !monthStr) {
+    SpreadsheetApp.getUi().alert("Please enter a Company Name and a Month (YYYY-MM) in cells B1 and B2.");
+    return;
+  }
+
+  if (monthStr instanceof Date) {
+      var tz = ss.getSpreadsheetTimeZone();
+      monthStr = Utilities.formatDate(monthStr, tz, "yyyy-MM");
+  } else {
+      monthStr = String(monthStr).substring(0, 7); 
+  }
+  if (!/^\d{4}-\d{2}$/.test(monthStr)) {
+      SpreadsheetApp.getUi().alert("Please enter the month in YYYY-MM format (e.g., 2025-10).");
+      return;
+  }
+  
+  const parts = monthStr.split('-');
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1; 
+
+  const startDate = new Date(Date.UTC(year, month, 1)); 
+  const endDate = new Date(Date.UTC(year, month + 1, 1)); 
+  
+  reportSheet.getRange("B2").setValue(monthStr); 
+  
+  if (reportSheet.getLastRow() >= 5) {
+      reportSheet.getRange(5, 1, reportSheet.getLastRow() - 4, 10).clearContent();
+  }
+
+
+  const dataRange = visitsSheet.getDataRange();
+  const allData = dataRange.getValues();
+  const headers = allData.shift(); 
+
+  const companyCol = headers.indexOf("Company Name");
+  const departureCol = headers.indexOf("Actual Departure Time");
+  const reportCol = headers.indexOf("Visit Report Data");
+  const workerCol = headers.indexOf("Worker Name");
+
+  if (companyCol === -1 || departureCol === -1 || reportCol === -1 || workerCol === -1) {
+      SpreadsheetApp.getUi().alert("Error: Could not find required columns ('Company Name', 'Actual Departure Time', 'Visit Report Data', 'Worker Name') in 'Visits' sheet.");
+      return;
+  }
+
+  let visitCount = 0;
+  const questionTally = {}; 
+  const allNotes = []; 
+
+  for (let i = 0; i < allData.length; i++) {
+    const row = allData[i];
+    
+    if (row[companyCol] === companyName) {
+      
+      var departureTime = null;
+      try {
+        if(row[departureCol]){
+           departureTime = new Date(row[departureCol]);
+           if (isNaN(departureTime.getTime())) departureTime = null;
+        }
+      } catch(e) {} 
+
+      if (departureTime && departureTime >= startDate && departureTime < endDate) {
+        visitCount++;
+        
+        const reportJson = row[reportCol];
+        if (reportJson) {
+          try {
+            const report = JSON.parse(reportJson);
+            
+            if (report.checklist) {
+              for (const question in report.checklist) {
+                if (report.checklist[question] === true) { 
+                  questionTally[question] = (questionTally[question] || 0) + 1;
+                }
+              }
+            }
+            
+            // --- MODIFIED: Combine main note and custom notes ---
+            let combinedNotes = "";
+            if (report.notes) {
+              combinedNotes += report.notes;
+            }
+            if (report.custom_notes) {
+              for (const noteHeader in report.custom_notes) {
+                if (report.custom_notes[noteHeader]) {
+                  combinedNotes += `\n\n**${noteHeader}:** ${report.custom_notes[noteHeader]}`;
+                }
+              }
+            }
+            if (combinedNotes) {
+              allNotes.push(`[${departureTime.toLocaleDateString()} - ${row[workerCol]}]: ${combinedNotes}`);
+            }
+            // --- END MODIFIED ---
+
+          } catch (e) {
+            Logger.log(`Could not parse report data in row ${i + 2}: ${reportJson}`);
+          }
+        }
+      }
+    }
+  }
+
+  let outputRow = 5;
+  reportSheet.getRange(outputRow, 1).setValue("Report for:").setFontWeight("bold");
+  reportSheet.getRange(outputRow, 2).setValue(companyName);
+  outputRow++;
+  reportSheet.getRange(outputRow, 1).setValue("Month:").setFontWeight("bold");
+  reportSheet.getRange(outputRow, 2).setValue(monthStr);
+  outputRow++;
+  reportSheet.getRange(outputRow, 1).setValue("Total Visits:").setFontWeight("bold");
+  reportSheet.getRange(outputRow, 2).setValue(visitCount);
+  outputRow += 2; 
+
+  reportSheet.getRange(outputRow, 1).setValue("Checklist Totals").setFontWeight("bold");
+  reportSheet.getRange(outputRow, 2).setValue("Times Ticked").setFontWeight("bold");
+  outputRow++;
+  
+  var sortedQuestions = Object.keys(questionTally).sort(); 
+  
+  for (const question of sortedQuestions) {
+    reportSheet.getRange(outputRow, 1).setValue(question);
+    reportSheet.getRange(outputRow, 2).setValue(questionTally[question]);
+    outputRow++;
+  }
+  
+  outputRow++; 
+
+  reportSheet.getRange(outputRow, 1).setValue("All Visit Notes").setFontWeight("bold");
+  outputRow++;
+  
+  if (allNotes.length > 0) {
+      allNotes.forEach(note => {
+        reportSheet.getRange(outputRow, 1).setValue(note).setWrap(true);
+        outputRow++;
+      });
+  } else {
+       reportSheet.getRange(outputRow, 1).setValue("No notes recorded for this period.");
+  }
+  
+  reportSheet.autoResizeColumn(1);
+  reportSheet.autoResizeColumn(2);
+  
+  SpreadsheetApp.getUi().alert("Report Generated!");
+}
+
+// --- === MODIFIED: generateMasterMonthlyReport (v2.6 - (Standard) fix + AI) === ---
+function generateMasterMonthlyReport() {
+  const ss = SpreadsheetApp.getActiveSpreadsheet();
+  const controlSheet = ss.getSheetByName("Master Report"); // Output sheet
+  const visitsSheet = ss.getSheetByName(VISITS_SHEET_NAME); // Data source
+  const checklistSheet = ss.getSheetByName(CHECKLISTS_SHEET_NAME);
+  
+  if (!controlSheet || !visitsSheet || !checklistSheet) {
+    SpreadsheetApp.getUi().alert("Error: 'Master Report', 'Visits', or 'Checklists' sheet not found.");
+    return;
+  }
+
+  // 1. Get the report criteria from the 'Master Report' sheet
+  let monthStr = controlSheet.getRange("B1").getValue(); 
+  
+  if (!monthStr) {
+    SpreadsheetApp.getUi().alert("Please enter a Month (YYYY-MM) in cell B1.");
+    return;
+  }
+
+  // --- Sanitize the month string ---
+  if (monthStr instanceof Date) {
+      var tz = ss.getSpreadsheetTimeZone();
+      monthStr = Utilities.formatDate(monthStr, tz, "yyyy-MM");
+  } else {
+      monthStr = String(monthStr).substring(0, 7); 
+  }
+  if (!/^\d{4}-\d{2}$/.test(monthStr)) {
+      SpreadsheetApp.getUi().alert("Please enter the month in YYYY-MM format (e.g., 2025-10).");
+      return;
+  }
+  
+  const parts = monthStr.split('-');
+  const year = parseInt(parts[0], 10);
+  const month = parseInt(parts[1], 10) - 1; 
+
+  const startDate = new Date(Date.UTC(year, month, 1)); 
+  const endDate = new Date(Date.UTC(year, month + 1, 1)); 
+  
+  controlSheet.getRange("B1").setValue(monthStr); 
+  
+  // 2. Clear old report tabs
+  const allSheets = ss.getSheets();
+  for (let i = 0; i < allSheets.length; i++) {
+    const sheetName = allSheets[i].getName();
+    if (sheetName.startsWith(REPORT_TAB_PREFIX)) {
+      ss.deleteSheet(allSheets[i]);
+    }
+  }
+
+  // 3. Define Standard Checklist FALLBACK (must match Worker App)
+  const STANDARD_CHECKLIST_FALLBACK = [
+        "Safety check completed",
+        "Client goals reviewed",
+        "Next appointment scheduled",
+        "Visit notes recorded"
+  ];
+  
+  // 4. Cache ALL Checklists from sheet
+  const allChecklists = {}; // { "(Standard)": ["Q1", "Q2"], "Smith & Co.": ["Q1", "Q2"] }
+  const checklistData = checklistSheet.getDataRange().getValues();
+  const checklistHeaders = checklistData.shift();
+  checklistData.forEach(function(row) {
+      const companyName = row[0];
+      if (companyName) {
+          const questions = [];
+          for (let i = 1; i < checklistHeaders.length; i++) {
+              if (row[i]) {
+                  const q = String(row[i]);
+                  if (!q.startsWith("#") && !q.startsWith("%")) {
+                     questions.push(q);
+                  }
+              } else {
+                  break; 
+              }
+          }
+          allChecklists[companyName] = questions; // Store all, including (Standard)
+      }
+  });
+
+
+  // 5. Get all visit data
+  const dataRange = visitsSheet.getDataRange();
+  const allData = dataRange.getValues();
+  const headers = allData.shift(); 
+
+  const companyCol = headers.indexOf("Company Name");
+  const arrivalCol = headers.indexOf("Arrival Time"); 
+  const departureCol = headers.indexOf("Actual Departure Time");
+  const reportCol = headers.indexOf("Visit Report Data");
+  const workerCol = headers.indexOf("Worker Name");
+
+  if (companyCol === -1 || arrivalCol === -1 || departureCol === -1 || reportCol === -1 || workerCol === -1) {
+      SpreadsheetApp.getUi().alert("Error: Could not find required columns ('Company Name', 'Arrival Time', 'Actual Departure Time', 'Visit Report Data', 'Worker Name') in 'Visits' sheet.");
+      return;
+  }
+
+  // 6. Process the data
+  const masterReport = {}; 
+
+  for (let i = 0; i < allData.length; i++) {
+    const row = allData[i];
+    
+    const companyName = row[companyCol];
+    if (!companyName) continue; 
+
+    var departureTime = null;
+    try {
+      if(row[departureCol]){
+         departureTime = new Date(row[departureCol]); 
+         if (isNaN(departureTime.getTime())) departureTime = null;
+      }
+    } catch(e) {} 
+
+    if (departureTime && departureTime >= startDate && departureTime < endDate) {
+      
+      if (!masterReport[companyName]) {
+        // --- FIXED: Determine question list ---
+        let questionList = allChecklists[companyName]; // Try custom form first
+        
+        if (!questionList || questionList.length === 0) {
+           // If no custom form, try (Standard) form from sheet
+           questionList = allChecklists["(Standard)"];
+        }
+        if (!questionList || questionList.length === 0) {
+          // If (Standard) also fails, use hardcoded fallback
+          questionList = STANDARD_CHECKLIST_FALLBACK;
+        }
+        // --- END FIX ---
+        
+        const initialTally = {};
+        questionList.forEach(q => initialTally[q] = 0);
+        
+        masterReport[companyName] = {
+          totalVisits: 0,
+          totalDurationMs: 0,
+          questionList: questionList, 
+          questionTally: initialTally, 
+          notes: []
+        };
+      }
+      
+      const coData = masterReport[companyName]; 
+      
+      coData.totalVisits++;
+      
+      var arrivalTime = null;
+      var durationMs = 0; 
+      try {
+           if(row[arrivalCol]) {
+                arrivalTime = new Date(row[arrivalCol]);
+                if (isNaN(arrivalTime.getTime())) arrivalTime = null;
+           }
+      } catch(e) {}
+
+      if (arrivalTime) {
+           durationMs = departureTime.getTime() - arrivalTime.getTime();
+           if (durationMs > 0) {
+                coData.totalDurationMs += durationMs;
+           } else {
+               durationMs = 0;
+           }
+      }
+      
+      let mainNote = "--- No Report Data Submitted ---";
+      let durationMins = (durationMs / (1000 * 60));
+      
+      const reportJson = row[reportCol];
+      if (reportJson) {
+        try {
+          const report = JSON.parse(reportJson);
+          
+          if (report.checklist) {
+            for (const question in report.checklist) {
+              if (coData.questionTally.hasOwnProperty(question) && report.checklist[question] === true) { 
+                coData.questionTally[question]++; 
+              }
+            }
+          }
+          
+          // Combine main note and custom notes
+          let combinedNotes = report.notes || "";
+          if (report.custom_notes) {
+              for (const noteHeader in report.custom_notes) {
+                  if (report.custom_notes[noteHeader]) {
+                      // Format: BOLD HEADER (in Markdown), newline, note text
+                      combinedNotes += `\n\n**${noteHeader}:** ${report.custom_notes[noteHeader]}`;
+                  }
+              }
+          }
+          mainNote = combinedNotes.trim() || "--- No Notes Entered ---";
+
+        } catch (e) {
+          Logger.log(`Could not parse report data in row ${i + 2}: ${reportJson}`);
+          mainNote = "--- Error Parsing Report Data ---";
+        }
+      }
+      
+      coData.notes.push({
+            date: departureTime, 
+            worker: row[workerCol], 
+            note: mainNote, 
+            durationMins: durationMins
+      });
+    }
+  }
+
+  // 7. Write the consolidated report to SEPARATE TABS
+  SpreadsheetApp.flush(); 
+  
+  const allCompanyNames = Object.keys(masterReport).sort(); 
+
+  for (const companyName of allCompanyNames) {
+    const coData = masterReport[companyName];
+    
+    const newSheetName = REPORT_TAB_PREFIX + companyName.replace(/[\/\\?*\[\]]/g, '-').substring(0, 80); 
+    let newSheet = ss.insertSheet(newSheetName);
+    let outputRow = 1; 
+
+    // --- === AI CORRECTION STEP === ---
+    let aiCorrectionFailed = false; 
+    if (GEMINI_API_KEY && GEMINI_API_KEY !== "YOUR_GEMINI_API_KEY_HERE" && coData.notes.length > 0) {
+      Logger.log("Starting AI note correction for " + companyName);
+      try {
+        const rawNotes = coData.notes.map(n => n.note); 
+        
+        const systemPrompt = "You are a helpful proofreading assistant. You will be given a JSON array of visit notes. Correct any spelling and grammar mistakes in each note to professional New Zealand English. Do not add new information or change the meaning. Respond with a JSON array of the same length, containing the corrected notes. If a note is empty or fine, return it as-is.";
+        
+        const schema = {
+          "type": "ARRAY",
+          "items": { "type": "STRING" }
+        };
+        
+        const payload = {
+          contents: [{ parts: [{ text: JSON.stringify(rawNotes) }] }],
+          systemInstruction: { parts: [{ text: systemPrompt }] },
+          generationConfig: {
+            responseMimeType: "application/json",
+            responseSchema: schema
+          }
+        };
+        
+        const apiUrl = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-preview-09-2025:generateContent?key=${GEMINI_API_KEY}`;
+        
+        const options = {
+          method: 'POST',
+          contentType: 'application/json',
+          payload: JSON.stringify(payload),
+          muteHttpExceptions: true 
+        };
+        
+        const response = UrlFetchApp.fetch(apiUrl, options);
+        const responseCode = response.getResponseCode();
+        
+        if (responseCode === 200) {
+          const result = JSON.parse(response.getContentText());
+          const correctedNotes = JSON.parse(result.candidates[0].content.parts[0].text);
+          
+          if (correctedNotes.length === coData.notes.length) {
+            for (let i = 0; i < coData.notes.length; i++) {
+              coData.notes[i].note = correctedNotes[i]; 
+            }
+            Logger.log("Successfully corrected notes for " + companyName);
+          } else {
+            Logger.log("AI returned different number of notes. Skipping correction for " + companyName);
+            aiCorrectionFailed = true; 
+          }
+        } else {
+            Logger.log("AI API Error for " + companyName + ": " + response.getContentText());
+            aiCorrectionFailed = true; 
+        }
+      } catch(err) {
+        Logger.log("Error during AI note correction for " + companyName + ": " + err.toString());
+        aiCorrectionFailed = true; 
+      }
+    }
+    // --- === END AI CORRECTION STEP === ---
+
+    // Write company header
+    newSheet.getRange(outputRow, 1).setValue(companyName).setFontWeight("bold").setBackground("#4a5568").setFontColor("#ffffff");
+    newSheet.getRange(outputRow, 1, 1, 4).merge(); 
+    outputRow++;
+    
+    // Write Stats
+    newSheet.getRange(outputRow, 1).setValue("Report Month:").setFontWeight("bold");
+    newSheet.getRange(outputRow, 2).setValue(monthStr);
+    outputRow++;
+    newSheet.getRange(outputRow, 1).setValue("Total Visits:").setFontWeight("bold");
+    newSheet.getRange(outputRow, 2).setValue(coData.totalVisits);
+    outputRow++;
+    
+    newSheet.getRange(outputRow, 1).setValue("Total Hours On-Site (Calculated):").setFontWeight("bold");
+    const totalHours = coData.totalDurationMs / (1000 * 60 * 60); 
+    newSheet.getRange(outputRow, 2).setValue(totalHours.toFixed(2));
+    outputRow += 2; 
+
+    // Write Checklist Totals
+    newSheet.getRange(outputRow, 1).setValue("Checklist Totals").setFontWeight("bold");
+    newSheet.getRange(outputRow, 2).setValue("Times Ticked").setFontWeight("bold");
+    outputRow++;
+    
+    if (coData.questionList.length > 0) {
+        for (const question of coData.questionList) {
+            newSheet.getRange(outputRow, 1).setValue(question);
+            newSheet.getRange(outputRow, 2).setValue(coData.questionTally[question]);
+            outputRow++;
+        }
+    } else {
+         newSheet.getRange(outputRow, 1).setValue("No checklist data recorded.").setFontStyle("italic");
+         outputRow++;
+    }
+    
+    outputRow++; 
+    
+    if (aiCorrectionFailed) {
+      newSheet.getRange(outputRow, 1, 1, 4).setValue("Note: AI spelling/grammar check failed. The notes below are uncorrected.")
+        .setFontColor("#ff0000") // Red
+        .setFontWeight("bold")
+        .setFontStyle("italic")
+        .setHorizontalAlignment("center")
+        .merge();
+      outputRow++;
+    }
+
+    // Write All Notes (in four columns)
+    newSheet.getRange(outputRow, 1).setValue("Date").setFontWeight("bold");
+    newSheet.getRange(outputRow, 2).setValue("Worker").setFontWeight("bold");
+    newSheet.getRange(outputRow, 3).setValue("Note").setFontWeight("bold");
+    newSheet.getRange(outputRow, 4).setValue("Duration (Mins)").setFontWeight("bold");
+    outputRow++;
+    
+    let monthTotalMinutes = 0; 
+    
+    if (coData.notes.length > 0) {
+        coData.notes.sort((a,b) => a.date.getTime() - b.date.getTime()); // Sort notes by date
+        coData.notes.forEach(noteEntry => {
+            newSheet.getRange(outputRow, 1).setValue(noteEntry.date).setNumberFormat("yyyy-mm-dd"); 
+            newSheet.getRange(outputRow, 2).setValue(noteEntry.worker);
+            newSheet.getRange(outputRow, 3).setValue(noteEntry.note).setWrap(true);
+            newSheet.getRange(outputRow, 4).setValue(noteEntry.durationMins.toFixed(0));
+            monthTotalMinutes += noteEntry.durationMins;
+            outputRow++;
+        });
+    } else {
+         newSheet.getRange(outputRow, 1, 1, 4).setValue("No notes recorded for this period.").setFontStyle("italic").merge();
+         outputRow++;
+    }
+    
+    // Add Total row for this company
+    newSheet.getRange(outputRow, 3).setValue("Total Hours (from visits):").setFontWeight("bold");
+    newSheet.getRange(outputRow, 4).setValue(monthTotalMinutes / 60).setNumberFormat("0.00").setFontWeight("bold");
+    
+    // Auto-resize columns on the new sheet
+    newSheet.autoResizeColumn(1);
+    newSheet.autoResizeColumn(2);
+    newSheet.setColumnWidth(3, 350); 
+    newSheet.autoResizeColumn(4); 
+  }
+  
+  SpreadsheetApp.getUi().alert("Master Report Generated! New tabs have been created for each company.");
 }
 
